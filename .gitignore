@@ -1,0 +1,32 @@
+# ---- Python / uv ----
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.uv-cache/
+dist/
+build/
+
+# ---- 环境变量与本地数据 ----
+.env
+backend/.env
+frontend/.env
+*.db
+backend/milvus_demo.db
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+frontend/.next/
+frontend/node_modules/
+*.tsbuildinfo
+.next/
+
+# ---- IDE / OS ----
+.vscode/
+.idea/
+.DS_Store
+
+# ---- 日志 ----
+*.log

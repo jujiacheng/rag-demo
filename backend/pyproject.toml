@@ -1,0 +1,37 @@
+[project]
+name = "rag-demo-backend"
+version = "0.1.0"
+description = "RAG + Milvus 2.6 技术分享示例：FastAPI 后端（LangChain 1.x + langchain-milvus）"
+requires-python = ">=3.11"
+dependencies = [
+    # --- LangChain 1.x 核心与集成 ---
+    "langchain>=1.0,<2",
+    "langchain-openai>=0.3",
+    "langchain-milvus>=0.3,<0.4",
+    "langchain-text-splitters>=0.3",
+    "langgraph>=0.2",
+
+    # --- 向量数据库 ---
+    # 钉死 2.6.12：规避 2.6.16 的 ConnectionManager 与 langchain-milvus 混用
+    # 导致的 ConnectionNotExistException（见 milvus#48641）。
+    # 用 pymilvus[milvus-lite] extra 引入本地单文件运行时；
+    # 切到完整服务器版时改成裸 "pymilvus==2.6.12" 即可。
+    "pymilvus[milvus-lite]==2.6.12",
+
+    # --- Web 服务 ---
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic-settings>=2.5",
+    "python-dotenv>=1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.uv]
+# 让 uv 把包作为可编辑模式安装，便于 `uv run python -m app.xxx` 直接跑
+dev-mode = true
