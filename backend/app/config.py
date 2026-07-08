@@ -24,8 +24,8 @@ class Settings(BaseSettings):
 
     # ---- 智谱 GLM（OpenAI 兼容接口）----
     zhipuai_api_key: str = "your_zhipuai_api_key_here"
-    llm_base_url: str = "https://open.bigmodel.com/api/paas/v4/"
-    llm_model: str = "glm-4.6"
+    llm_base_url: str = "https://open.bigmodel.cn/api/paas/v4/"
+    llm_model: str = "glm-5.2"
     embedding_model: str = "embedding-3"
 
     # ---- Milvus ----

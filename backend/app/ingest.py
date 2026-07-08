@@ -15,6 +15,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.config import settings
 from app.llm import get_embeddings
+import app.milvus_compat  # noqa: F401  应用 pymilvus 新旧 API 桥接（见该模块）
 
 
 def load_documents() -> list[str]:

@@ -33,5 +33,6 @@ build-backend = "hatchling.build"
 packages = ["app"]
 
 [tool.uv]
-# 让 uv 把包作为可编辑模式安装，便于 `uv run python -m app.xxx` 直接跑
-dev-mode = true
+# uv 默认就会把当前项目作为可编辑包安装，`uv run python -m app.xxx` 可直接跑。
+# （这里显式声明 package = true，避免历史遗留的 dev-mode 字段——uv 无此字段。）
+package = true

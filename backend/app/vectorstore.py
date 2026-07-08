@@ -12,6 +12,7 @@ from langchain_milvus import Milvus
 
 from app.config import settings
 from app.llm import get_embeddings
+import app.milvus_compat  # noqa: F401  应用 pymilvus 新旧 API 桥接（见该模块）
 
 
 @lru_cache(maxsize=1)
