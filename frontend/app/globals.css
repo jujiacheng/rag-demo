@@ -70,7 +70,6 @@ body {
   border-radius: 10px;
   font-size: 14px;
   line-height: 1.7;
-  white-space: pre-wrap;
   word-break: break-word;
 }
 
@@ -78,6 +77,7 @@ body {
   background: #e6f4ff;
   align-self: flex-end;
   max-width: 80%;
+  white-space: pre-wrap;
 }
 
 .msg.assistant {
@@ -85,6 +85,88 @@ body {
   border: 1px solid #ececec;
 }
 
+/* ── markdown 渲染 ── */
+.markdown {
+  font-size: 14px;
+  line-height: 1.75;
+}
+.markdown > *:first-child {
+  margin-top: 0;
+}
+.markdown > *:last-child {
+  margin-bottom: 0;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.markdown h1 {
+  font-size: 18px;
+}
+.markdown h2 {
+  font-size: 16px;
+}
+.markdown h3 {
+  font-size: 15px;
+}
+.markdown h4 {
+  font-size: 14px;
+}
+.markdown p {
+  margin: 8px 0;
+}
+.markdown ul,
+.markdown ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+.markdown li {
+  margin: 3px 0;
+}
+.markdown code {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  background: #f5f5f7;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.markdown pre {
+  margin: 10px 0;
+  padding: 12px 14px;
+  background: #f6f8fa;
+  border: 1px solid #ececec;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.markdown blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid #d0d0d0;
+  color: #666;
+}
+.markdown hr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid #ececec;
+}
+.markdown strong {
+  font-weight: 600;
+}
+.markdown a {
+  color: #4096ff;
+}
+
+/* ── 折叠来源卡片 ── */
 .sources {
   margin-top: 16px;
   border-top: 1px dashed #ddd;
@@ -99,15 +181,71 @@ body {
 }
 
 .source-item {
+  border: 1px solid #ececec;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  background: #fafbfc;
+}
+
+.source-item.open {
+  background: #fff;
+}
+
+.source-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
   font-size: 12px;
   color: #555;
-  background: #f9f9f9;
-  border-left: 3px solid #4096ff;
-  padding: 8px 10px;
-  border-radius: 4px;
-  margin-bottom: 6px;
-  line-height: 1.5;
-  max-height: 120px;
+}
+
+.source-head:hover {
+  background: #f0f5ff;
+}
+
+.source-idx {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: #4096ff;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.source-summary {
+  flex: 1;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-toggle {
+  flex-shrink: 0;
+  color: #4096ff;
+  font-size: 11px;
+}
+
+.source-full {
+  padding: 8px 10px 10px;
+  border-top: 1px solid #ececec;
+  font-size: 12px;
+  color: #555;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  max-height: 200px;
   overflow: auto;
 }
 

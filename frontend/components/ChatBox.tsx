@@ -1,6 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 
 type Source = { content: string; source: string };
 type Message = {
@@ -15,6 +18,25 @@ const SUGGESTIONS = [
   "朴素 RAG 和 Agentic RAG 有什么区别？",
   "HNSW 索引的关键参数有哪些？",
 ];
+
+function summary(text: string, max = 50): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length > max ? clean.slice(0, max) + "…" : clean;
+}
+
+function SourceCard({ source, index }: { source: Source; index: number }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`source-item ${open ? "open" : ""}`}>
+      <button className="source-head" onClick={() => setOpen((o) => !o)}>
+        <span className="source-idx">#{index + 1}</span>
+        <span className="source-summary">{summary(source.content)}</span>
+        <span className="source-toggle">{open ? "收起" : "展开"}</span>
+      </button>
+      {open && <div className="source-full">{source.content}</div>}
+    </div>
+  );
+}
 
 export default function ChatBox() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -138,14 +160,20 @@ export default function ChatBox() {
       <div className="messages">
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role}`}>
-            {m.content || (loading && m.role === "assistant" ? "思考中…" : "")}
+            {m.role === "assistant" && m.content ? (
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                  {m.content}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              m.content || (loading && m.role === "assistant" ? "思考中…" : "")
+            )}
             {m.sources && m.sources.length > 0 && (
               <div className="sources">
-                <h4>📎 引用来源（来自 Milvus 检索）</h4>
+                <h4>📎 引用来源（来自 Milvus 检索，{m.sources.length} 条 · 点击展开）</h4>
                 {m.sources.map((s, j) => (
-                  <div key={j} className="source-item">
-                    {s.content}
-                  </div>
+                  <SourceCard key={j} source={s} index={j} />
                 ))}
               </div>
             )}

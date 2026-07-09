@@ -55,7 +55,28 @@ def patch_langchain_milvus() -> None:
         alias = getattr(self, "alias", None)
         uri = self._connection_args.get("uri") if self._connection_args else None
         if alias and uri and alias not in connections._alias_handlers:
-            connections.connect(alias=alias, uri=uri)
+            connect_uri = uri
+            # 本地 milvus-lite：MilvusClient.__init__ 已经启动了 server 并持锁，
+            # 这里绝不能再拿 .db uri 去 connections.connect——那会触发第二次
+            # milvus-lite 启动，flock 冲突，server 启动失败但锁残留，后续每次
+            # 请求都死循环。改成向 server_manager 复用已启动的 http port，
+            # 用 http uri 走 ORM 的正常 gRPC 连接路径。
+            if isinstance(uri, str) and uri.endswith(".db"):
+                try:
+                    from milvus_lite.server_manager import (  # noqa: PLC0415
+                        server_manager_instance,
+                    )
+                    local_uri = server_manager_instance.start_and_get_uri(uri)
+                except ImportError:
+                    local_uri = None
+                if local_uri:
+                    connect_uri = local_uri
+                else:
+                    # server 还没启动或启动失败——此时让 _init 自己抛
+                    # ConnectionNotExistException，比触发锁冲突死循环好。
+                    connect_uri = None
+            if connect_uri is not None:
+                connections.connect(alias=alias, uri=connect_uri)
         return _orig_init(self, *args, **kwargs)
 
     _lm.Milvus._init = _patched_init

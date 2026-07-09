@@ -89,7 +89,8 @@ async def _stream_agent(question: str) -> AsyncIterator[str]:
                 sent_sources = True
 
         # 2) Agent 节点的正文 -> 逐 token 推送
-        if node == "agent" and message_chunk.content:
+        # langgraph 1.x 的 create_agent 把节点命名为 "model"（旧版是 "agent"），都兼容
+        if node in ("agent", "model") and message_chunk.content:
             yield _sse("token", {"text": message_chunk.content})
 
     yield _sse("done", {})

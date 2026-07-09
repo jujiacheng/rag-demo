@@ -1,23 +1,96 @@
 # RAG + Milvus 2.6 技术分享
 
-> 面向「已经了解部分 RAG 概念」的开发者
-> 时长：约 40 分钟｜配套代码：本仓库 `backend/` + `frontend/`
+> 面向「懂编程、但零基础接触 Milvus / 向量检索 / RAG」的开发者
+> 时长：约 43 分钟（可按现场简略）｜配套代码：本仓库 `backend/` + `frontend/`
+>
+> 文档会从最基础的「为什么需要向量库」讲起，不假设读者懂 embedding 或 ANN。术语首次出现时会简短解释，展开见 §0 前置概念。
 
 ---
 
-## 议程（40 分钟）
+## 议程（43 分钟）
 
 | # | 章节 | 时长 |
 |---|---|---|
+| 0 | 前置概念（向量库/embedding/数据模型/距离/ANN） | 5′ |
 | 1 | 开场：为什么是 RAG + 向量库 | 3′ |
-| 2 | RAG 是什么 & 它解决什么问题 | 8′ |
-| 3 | 向量数据库与 Milvus 2.6 | 10′ |
-| 4 | 动手：用 MilvusClient 玩转 Milvus | 7′ |
-| 5 | 进阶：Agentic RAG（智能体 × 向量检索） | 8′ |
+| 2 | RAG 是什么 & 它解决什么问题 | 6′ |
+| 3 | 向量数据库与 Milvus 2.6 | 8′ |
+| 4 | 动手：用 MilvusClient 玩转 Milvus（含 CRUD） | 8′ |
+| 5 | 进阶：Agentic RAG（智能体 × 向量检索） | 7′ |
 | 6 | 现场演示 | 3′ |
-| 7 | 踩坑 / 总结 / Q&A | 1′+ |
+| 7 | 踩坑 / 总结 / Q&A | 3′+ |
 
 > 👉 **带走三样东西**：① RAG 与向量检索的完整心智模型；② 能独立用 Milvus 2.6 + LangChain 1.x 搭一个 Agentic RAG；③ 避开我替你踩过的几个坑。
+
+---
+
+## 0. 前置概念（5′）
+
+> 这一节把后面会用到的核心术语一次性讲清楚。已经熟悉的可以跳过。
+
+### 0.1 为什么需要向量数据库
+
+用关系库存向量行不行？行，但很别扭：
+
+- **维度高**：一条文本经 embedding 后是 2048 维浮点数。关系库存成 BLOB 无法索引，存成 2048 列则表结构爆炸。
+- **相似度检索是全表扫描**：`ORDER BY cosine_dist(vec, query_vec)` 要对每行算距离，亿级数据查不动。
+- **无语义**：关键词 LIKE 匹配找不到「开心」和「快乐」的关联。
+
+所以需要**专门存向量 + 带近似最近邻索引**的库——这就是向量数据库。
+
+### 0.2 embedding 模型
+
+**text → vector 的转换链路**：
+
+- **embedding 模型**：把文本的语义映射成几百到几千维的浮点向量。语义相近的文本，向量在空间里也相近。
+- **在哪跑**：调 API（智谱 `embedding-3` / OpenAI `text-embedding-3-small`），不用自己部署模型。
+- **维度由模型定**：智谱 `embedding-3` = 2048 维，OpenAI `text-embedding-3-small` = 1536 维。**建集合时 `dim` 必须和模型输出维度严格一致**，否则入库/检索报错。
+- **你永远不需要手写向量**：提供 text，模型算出 vector。本 demo 的 `backend/app/llm.py:24` 的 `get_embeddings()` 就是这个入口。
+
+### 0.3 Milvus 数据模型
+
+```mermaid
+flowchart TD
+    C[cluster 集群] --> D[database 库]
+    D --> COL[collection 集合 ≈ 表]
+    COL --> S[schema 表结构]
+    S --> F[field 字段 ≈ 列]
+    COL --> I[index 索引 加速检索]
+    COL --> P[partition 分区 水平划分 可选]
+```
+
+类比关系数据库：
+
+| Milvus | 关系库 | 说明 |
+|---|---|---|
+| cluster | 实例 | 一个 Milvus 服务 |
+| database | database | 库 |
+| **collection** | **表** | 存数据的载体 |
+| **field** | **列** | 一个字段 |
+| **index** | **索引** | 加速检索（HNSW/IVF/Flat） |
+| partition | 分表 | 水平划分，可选 |
+
+> 💡 本 demo 只用到一个集合 `rag_demo`，3 个字段：`pk`(主键) / `vector`(向量) / `text`(原文)。见 `backend/milvus_demo.db/collections/rag_demo/schema.json`。
+
+### 0.4 距离度量
+
+向量相似度怎么算？三种常用度量：
+
+| 度量 | 含义 | 适用场景 |
+|---|---|---|
+| **COSINE** | 余弦相似度（方向是否一致） | **RAG 默认**——语义相似度用余弦最稳，不受向量长度影响 |
+| IP | 内积（点乘） | 向量已归一化且需要长度信息时 |
+| L2 | 欧氏距离（直线距离） | 图像/语音等连续特征 |
+
+> 💡 本 demo 全程用 `COSINE`。建索引和检索都要指定同一个 `metric_type`。
+
+### 0.5 ANN 近似最近邻
+
+- **精确最近邻**：遍历所有向量算距离，O(n)。高维 + 亿级数据时查不动。
+- **ANN（Approximate Nearest Neighbor，近似最近邻）**：牺牲一点点精度换巨大加速，工业标配。
+- 常见算法见 §3.2（HNSW / IVF / Flat）。
+
+> 💡 后面看到的 `search` 就是 ANN 检索——给一个 query 向量，从索引里快速找 top-k（最相似的前 k 条，k 通常 3-5）。
 
 ---
 
@@ -33,7 +106,7 @@
 
 ---
 
-## 2. RAG 是什么 & 它解决什么问题（8′）
+## 2. RAG 是什么 & 它解决什么问题（6′）
 
 ### 2.1 LLM 的三块硬伤
 
@@ -77,7 +150,7 @@ flowchart LR
 
 ---
 
-## 3. 向量数据库与 Milvus 2.6（10′）
+## 3. 向量数据库与 Milvus 2.6（8′）
 
 ### 3.1 向量检索的直觉
 
@@ -86,6 +159,8 @@ flowchart LR
 但维度高、数据量大时，**精确**最近邻代价爆炸。所以工业上用 **ANN（近似最近邻）**，牺牲一点点精度换巨大加速。
 
 ### 3.2 常见索引：HNSW
+
+> HNSW = Hierarchical Navigable Small World（分层小世界图），一种图结构索引，低延迟、高召回，RAG 首选。
 
 | 索引 | 思路 | 特点 |
 |---|---|---|
@@ -102,6 +177,8 @@ HNSW 两个关键参数：
 开源、云原生、分布式向量数据库，LF AI & Data 基金会项目。能扛亿级向量，支持多种索引、混合检索、动态 schema。是目前最主流的开源向量库之一。
 
 ### 3.4 Milvus 2.6 的新特性（重点）
+
+> 💡 **稠密 vs 稀疏向量**：dense（稠密）= embedding 产出的向量，每维都有值（如 2048 维浮点）；sparse（稀疏）= BM25 产出的向量，只有关键词对应的维度有值，其余为 0。混合检索 = 同时用两种向量，兼顾语义和关键词。
 
 | 特性 | 价值 |
 |---|---|
@@ -127,9 +204,31 @@ connections.connect(alias="default", uri="http://localhost:19530")
 
 通过 `pymilvus[milvus-lite]`（本仓库已在 `backend/pyproject.toml` 声明，`uv sync` 自动装上），把 `uri` 指向一个本地文件，进程内嵌运行，**零运维**。注意它只支持 Flat 索引，生产规模请上 Docker standalone（见仓库 `docker-compose.yml`）。
 
+### 3.7 本 demo 的三层封装
+
+```mermaid
+flowchart TD
+    L["langchain（应用层）<br/>Agent / @tool 业务编排"] -->|调用| LM["langchain-milvus（封装层）<br/>Milvus 的 LangChain 适配"]
+    LM -->|调用| P["pymilvus（驱动层）<br/>MilvusClient 原生 API"]
+    P -->|gRPC| M["Milvus（服务层）<br/>standalone / milvus-lite"]
+```
+
+| 层 | 作用 | 本 demo 用在哪 |
+|---|---|---|
+| **langchain** | Agent / @tool 业务编排 | §5 的 Agentic RAG |
+| **langchain-milvus** | Milvus 的 LangChain 适配（封装 MilvusClient，自动 embedding） | §5 的 `vectorstore.py` / `ingest.py` |
+| **pymilvus** | MilvusClient 原生 API（直接操作集合/索引/数据） | §4 的 `milvus_raw.py` / `crud_*.py` |
+| **Milvus** | 服务端（milvus-lite 单文件 或 standalone） | 底层 |
+
+> 💡 **为什么 §4 用 pymilvus、§5 突然用 langchain？**
+> - §4 学底层：用 pymilvus 原生 API，看清 `create_collection` / `insert` / `search` 每一步，不被封装遮蔽
+> - §5 学应用：用 langchain + langchain-milvus，封装层帮你省掉手写 embedding 和 schema，聚焦 Agent 逻辑
+>
+> 看完 §4 再看 §5，就能理解 langchain-milvus 帮你省了什么。
+
 ---
 
-## 4. 动手：用 MilvusClient 玩转 Milvus（7′）
+## 4. 动手：用 MilvusClient 玩转 Milvus（8′）
 
 > 走读 `backend/app/milvus_raw.py`。完整可跑，`uv run python -m app.milvus_raw`。
 
@@ -161,7 +260,7 @@ index_params.add_index(
 client.create_collection("demo", schema=schema, index_params=index_params)
 ```
 
-> 💡 讲三个点：① `auto_id` 让 Milvus 自动生成主键；② `nullable=True` 是 2.6 新特性；③ 一次 `create_collection` 同时建表+建索引。
+> 💡 讲四个点：① `auto_id` 让 Milvus 自动生成主键；② `nullable=True` 是 2.6 新特性；③ 一次 `create_collection` 同时建表+建索引；④ `metric_type="COSINE"` 指定距离度量（见 §0.4）。
 
 ### 4.3 插入 + 加载 + 检索
 
@@ -184,9 +283,36 @@ res = client.search(
 
 > 💡 `load_collection` 把索引载入内存才能查；`output_fields` 控制回带哪些标量字段。
 
+### 4.4 完整 CRUD：增删改查速查
+
+> `milvus_raw.py` 只演示了 create + insert + search（增 + 查的一部分）。完整的增删改查见 `backend/app/crud_*.py` 四个脚本，用独立的 `crud_demo.db`，不影响主知识库，可独立跑。
+
+| 操作 | API | 一句话 |
+|---|---|---|
+| 增 | `insert` | 插入新行，`auto_id` 时主键自动生成 |
+| 改 | `upsert` | 按 id 整条覆盖；id 不存在则插入。**无单字段 update** |
+| 删行 | `delete` | 按主键删行，集合 schema/索引保留 |
+| 删表 | `drop_collection` | 集合 + 数据 + 索引全没 |
+| 查·按 id | `get` | 按主键精确取，O(1)，不走向量 |
+| 查·标量过滤 | `query` | `filter="id >= 2"`，不走向量 |
+| 查·向量相似 | `search` | 给 query 向量找 top-k，走 ANN 索引 |
+
+```bash
+cd backend
+uv run python -m app.crud_create    # 增：建集合 + insert 4 条
+uv run python -m app.crud_read      # 查：get / query / search 三种方式
+uv run python -m app.crud_update    # 改：upsert 整条覆盖
+uv run python -m app.crud_delete    # 删：delete 删行 + drop_collection 删表
+```
+
+> 💡 三个关键区分（演示时重点讲）：
+> 1. **查的三种方式**：`get`（按 id）/ `query`（标量过滤）/ `search`（向量相似度）—— 容易混，重点记
+> 2. **upsert 是整条覆盖，不是打补丁**：Milvus 没有 `UPDATE SET col=x`，必须给完整字段（vector + text 都带）。想只改 text，得先 `get` 拿旧 vector 带回去
+> 3. **vector 不是手写的**：`crud_*.py` 用 4 维假向量是为了演示简单。真实场景 vector 由 embedding 模型把 text 转换而来（`emb.embed_query("苹果")` → 2048 维 float），见 `backend/app/llm.py` 的 `get_embeddings()`
+
 ---
 
-## 5. 进阶：Agentic RAG（8′）
+## 5. 进阶：Agentic RAG（7′）
 
 > 走读 `backend/app/agent.py` + `backend/app/vectorstore.py` + `backend/app/ingest.py`。
 
@@ -199,6 +325,11 @@ res = client.search(
 | **Agentic RAG** | **Agent 自主决策** | **按需多次** | 高 |
 
 ### 5.2 关键一步：把检索做成工具
+
+> 💡 **什么是 Agent / tool？**（零基础铺垫）
+> - **Agent（智能体）= LLM + 工具 + 循环决策**：LLM 不只生成文本，还能决定「要不要调工具、调哪个」，工具返回结果后 LLM 再决定「继续调还是生成最终回答」。
+> - **tool use / function calling**：模型按工具的签名（名字 + 参数描述）生成结构化调用，不是模型直接执行代码。
+> - 这就是 Agentic RAG 比「固定管线」灵活的根本原因——LLM 自己判断要不要检索。
 
 LangChain 1.x 的标准写法是 `@tool` 装饰器 + `create_agent`：
 
@@ -249,6 +380,8 @@ Agent 可以：**一次不检索**（闲聊）、**检索一次**（普通问题
 
 ### 5.5 流式输出到前端（SSE）
 
+> SSE = Server-Sent Events，HTTP 长连接流式推送，适合逐 token 输出。
+
 后端用 `agent.astream(..., stream_mode="messages")` 拿到逐 token 的流，包成 SSE（`event: token` / `event: sources` / `event: done`）。前端用 `ReadableStream` 解析、逐字渲染。代码见 `backend/app/main.py` 与 `frontend/components/ChatBox.tsx`。
 
 ---
@@ -271,7 +404,7 @@ cd frontend && yarn install && yarn dev
 
 ---
 
-## 7. 踩坑 / 总结 / Q&A（1′+）
+## 7. 踩坑 / 总结 / Q&A（3′+）
 
 ### 🕳️ 踩过的坑
 
@@ -286,6 +419,12 @@ cd frontend && yarn install && yarn dev
 
 4. **LangChain 1.x 的 import 变了**
    `create_react_agent` / `create_retriever_tool` 等旧 API 虽然还能用，但 1.x 推荐 `langchain.agents.create_agent` + `langchain.tools.tool`。照着 0.x 教程抄会踩雷。
+
+5. **`lru_cache` 并发竞态导致 milvus-lite 锁死**
+   `vectorstore.py` 原本用 `@lru_cache` 做 Milvus 单例，但 Python 3.14 的 `lru_cache` **不串行化**被缓存函数的调用。langgraph 的 `tool_node` 用 `asyncio.gather` + `run_in_executor` 在线程池里并行跑工具，多个线程同时进入 `Milvus(...)` 构造，撞上 `ServerManager.start_and_get_uri` 的竞态（它在锁外执行 `start_server_in_thread`），一个线程持锁成功、另一个 `DataDirLockedError`，agent 流中断。**解法**：用 `threading.Lock` + double-checked locking 替代 `lru_cache`（见 `backend/app/vectorstore.py`）。
+
+6. **langgraph 1.x 的 node 名是 `"model"` 不是 `"agent"`**
+   `agent.astream(stream_mode="messages", version="v2")` 的 chunk metadata 里，`langgraph_node` 在 1.x 是 `"model"`（旧版 0.x 是 `"agent"`）。`main.py` 若判断 `node == "agent"`，所有 token chunk 都会被过滤掉，前端只看得到引用来源、**看不到回答正文**。**解法**：判断 `node in ("agent", "model")` 兼容新旧版本（见 `backend/app/main.py`）。
 
 ### ✅ 一页总结
 
@@ -313,15 +452,17 @@ cd frontend && yarn install && yarn dev
 | langchain-milvus | 0.3.x |
 | langchain | 1.x |
 | Next.js | 15 |
-| 智谱 LLM / Embedding | glm-4.6 / embedding-3（2048 维） |
+| 智谱 LLM / Embedding | glm-5.2 / embedding-3（2048 维） |
 
 ## 附录 B：代码地图
 
 | 你想看… | 打开… |
 |---|---|
 | Milvus 原生用法 | `backend/app/milvus_raw.py` |
+| Milvus 增删改查（CRUD） | `backend/app/crud_*.py`（4 个脚本，独立 `crud_demo.db`） |
 | 文档切分入库 | `backend/app/ingest.py` |
 | 向量库封装 | `backend/app/vectorstore.py` |
+| pymilvus 新旧 API 桥接（见 §7 踩坑 #1） | `backend/app/milvus_compat.py` |
 | **Agentic RAG 核心** | `backend/app/agent.py` |
 | SSE 流式接口 | `backend/app/main.py` |
 | 聊天 UI | `frontend/components/ChatBox.tsx` |
