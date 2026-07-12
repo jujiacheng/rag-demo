@@ -28,8 +28,3 @@ def get_embeddings() -> OpenAIEmbeddings:
         api_key=settings.zhipuai_api_key,
         base_url=settings.llm_base_url,
     )
-
-
-# 智谱 embedding-3 默认输出 2048 维；建集合时需要保持一致。
-# 如果改用其它 embedding 模型，请同步修改这里的维度。
-EMBEDDING_DIM = 2048

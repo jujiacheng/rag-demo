@@ -33,7 +33,7 @@
 | 向量库 | **Milvus 2.6**（本地用 milvus-lite 单文件，零运维） |
 | SDK | pymilvus `2.6.12` + langchain-milvus `0.3.x` |
 | Agent | **LangChain 1.x** `create_agent` + `@tool`（retriever 即工具） |
-| LLM / Embedding | 智谱 GLM（OpenAI 兼容接口）：`glm-4.6` + `embedding-3` |
+| LLM / Embedding | 智谱 GLM（OpenAI 兼容接口）：`glm-5.2` + `embedding-3` |
 | 后端 | FastAPI + uvicorn，SSE 流式 |
 | 前端 | Next.js 15 (App Router) + React 19 + TypeScript |
 | 包管理 | Python 用 **uv**，前端用 **yarn** |
@@ -102,16 +102,25 @@ yarn dev                            # 访问 http://localhost:3000
 │   ├── app/
 │   │   ├── config.py                  # 配置（pydantic-settings）
 │   │   ├── llm.py                     # 智谱 LLM + Embedding 工厂
+│   │   ├── milvus_compat.py           # langchain-milvus / pymilvus 新旧 API 桥接（import 即生效）
 │   │   ├── milvus_raw.py              # 原生 MilvusClient 用法演示（第 4 节走读）
-│   │   ├── vectorstore.py             # langchain-milvus 封装
+│   │   ├── crud_create.py             # Milvus CRUD 演示 · 增（建集合 + insert）
+│   │   ├── crud_read.py               # Milvus CRUD 演示 · 查（get / query / search 对比）
+│   │   ├── crud_update.py             # Milvus CRUD 演示 · 改（upsert 整条覆盖）
+│   │   ├── crud_delete.py             # Milvus CRUD 演示 · 删（delete 行 / drop_collection）
+│   │   ├── vectorstore.py             # langchain-milvus 封装（线程安全单例）
 │   │   ├── ingest.py                  # 文档切分 + 入库（离线）
 │   │   ├── agent.py                   # Agentic RAG（第 5 节走读）
 │   │   └── main.py                    # FastAPI + SSE
 │   └── data/milvus_faq.md             # 知识库语料（20 条 Q&A）
 └── frontend/
     ├── package.json
-    ├── app/{layout,page}.tsx, api/chat/route.ts
-    └── components/ChatBox.tsx         # 聊天 + 流式渲染 + 引用来源
+    ├── app/
+    │   ├── layout.tsx                 # 根布局
+    │   ├── page.tsx                   # 首页（挂载 ChatBox）
+    │   └── api/chat/route.ts          # 同源代理，透传后端 SSE 流
+    └── components/
+        └── ChatBox.tsx                # 聊天 + 流式渲染 + 引用来源
 ```
 
 ---
